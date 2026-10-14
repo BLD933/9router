@@ -155,7 +155,7 @@ function toolNameOf(tool) {
  * @param {Array} tools
  * @returns {{ tools: Array, map: Map<string,string> }} map: sent name -> original name
  */
-export function concealFingerprintToolNames(tools) {
+export function concealFingerprintToolNames(tools, flat = false) {
   const map = new Map();
   if (!Array.isArray(tools) || tools.length === 0) return { tools, map };
 
@@ -181,10 +181,25 @@ export function concealFingerprintToolNames(tools) {
 
     if (current !== key) {
       map.set(key, current);
-      const fn = tool.function && typeof tool.function === "object" && !Array.isArray(tool.function)
-        ? tool.function
-        : null;
-      out.push(fn ? { ...tool, function: { ...fn, name: key } } : { ...tool, name: key });
+    }
+
+    // Upstream free-tier gate strictly verifies that quartet members (bash, edit, read, write)
+    // match OpenCode's authentic tool description and JSON Schema parameters.
+    const def = OPENCODE_STANDARD_TOOLS.find((t) => t.function.name === key);
+    if (def) {
+      out.push(flat ? {
+        type: "function",
+        name: key,
+        description: def.function.description,
+        parameters: def.function.parameters,
+      } : {
+        type: "function",
+        function: {
+          name: key,
+          description: def.function.description,
+          parameters: def.function.parameters,
+        },
+      });
     } else {
       out.push(tool);
     }
@@ -248,7 +263,7 @@ export function retargetToolChoice(body, map) {
 export function applyFingerprintTools(body, flat) {
   if (!body || typeof body !== "object") return new Map();
 
-  const { tools, map } = concealFingerprintToolNames(body.tools);
+  const { tools, map } = concealFingerprintToolNames(body.tools, flat);
   body.tools = appendMissingFingerprintTools(tools, flat);
   retargetToolChoice(body, map);
 
