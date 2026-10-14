@@ -99,10 +99,32 @@ describe("opencodeFingerprint — request side", () => {
     expect(body.tool_choice.function.name).toBe("read");
   });
 
-  it("records the rename map against the body for the response side", () => {
-    const body = { tools: flat(CC_TOOLS) };
-    const map = applyFingerprintTools(body, true);
-    expect(takeRenamedToolNames(body)).toBe(map);
+  it("canonicalises history tool_calls in messages and converts snake_case to camelCase", () => {
+    const body = {
+      tools: flat(CC_TOOLS),
+      messages: [
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              function: {
+                name: "Edit",
+                arguments: JSON.stringify({ file_path: "/test.txt", old_string: "a", new_string: "b", replace_all: true }),
+              },
+            },
+          ],
+        },
+      ],
+    };
+    applyFingerprintTools(body, true);
+    const tc = body.messages[0].tool_calls[0].function;
+    expect(tc.name).toBe("edit");
+    const args = JSON.parse(tc.arguments);
+    expect(args.filePath).toBe("/test.txt");
+    expect(args.oldString).toBe("a");
+    expect(args.newString).toBe("b");
+    expect(args.replaceAll).toBe(true);
+    expect(args.file_path).toBeUndefined();
   });
 
   it("never throws on malformed tools", () => {
@@ -135,21 +157,52 @@ describe("opencodeFingerprint — response side", () => {
     expect(out[0].choices[0].delta.tool_calls[0].function.name).toBe("Grep");
   });
 
-  it("restores names in Claude non-streaming bodies", () => {
-    const body = { type: "message", content: [{ type: "tool_use", name: "bash", input: {} }] };
-    expect(restoreToolNames(body, map).content[0].name).toBe("Bash");
+  it("restores names and normalizes arguments in Claude non-streaming bodies", () => {
+    const body = {
+      type: "message",
+      content: [
+        {
+          type: "tool_use",
+          name: "edit",
+          input: { filePath: "/path/to/file", oldString: "old", newString: "new", replaceAll: true },
+        },
+      ],
+    };
+    const out = restoreToolNames(body, map);
+    expect(out.content[0].name).toBe("Edit");
+    expect(out.content[0].input.file_path).toBe("/path/to/file");
+    expect(out.content[0].input.old_string).toBe("old");
+    expect(out.content[0].input.new_string).toBe("new");
+    expect(out.content[0].input.replace_all).toBe(true);
+    expect(out.content[0].input.filePath).toBeUndefined();
   });
 
-  it("restores names in Chat Completions message and delta shapes", () => {
+  it("restores names and normalizes arguments in Chat Completions message shapes", () => {
     const body = {
       choices: [
-        { message: { tool_calls: [{ function: { name: "grep", arguments: "{}" } }] } },
+        {
+          message: {
+            tool_calls: [
+              {
+                function: {
+                  name: "edit",
+                  arguments: JSON.stringify({ filePath: "/path/file", oldString: "a", newString: "b" }),
+                },
+              },
+            ],
+          },
+        },
         { delta: { tool_calls: [{ function: { name: "read", arguments: "{}" } }] } },
       ],
     };
     const out = restoreToolNames(body, map);
 
-    expect(out.choices[0].message.tool_calls[0].function.name).toBe("Grep");
+    expect(out.choices[0].message.tool_calls[0].function.name).toBe("Edit");
+    const parsedArgs = JSON.parse(out.choices[0].message.tool_calls[0].function.arguments);
+    expect(parsedArgs.file_path).toBe("/path/file");
+    expect(parsedArgs.old_string).toBe("a");
+    expect(parsedArgs.new_string).toBe("b");
+    expect(parsedArgs.filePath).toBeUndefined();
     expect(out.choices[1].delta.tool_calls[0].function.name).toBe("Read");
   });
 

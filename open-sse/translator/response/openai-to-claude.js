@@ -11,20 +11,84 @@ import { extractReasoningText } from "../concerns/reasoning.js";
 const CLAUDE_OAUTH_TOOL_PREFIX = "proxy_";
 
 // Sanitize tool call arguments to fix bad params from non-Anthropic models
-function sanitizeToolArgs(toolName, argsJson) {
+export function sanitizeToolArgs(toolName, argsJson) {
   try {
     const args = JSON.parse(argsJson);
     const name = toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)
       ? toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length)
       : toolName;
-    if (name === "Read") sanitizeReadArgs(args);
+    const lower = name.toLowerCase();
+    if (lower === "read") sanitizeReadArgs(args);
+    else if (lower === "edit") sanitizeEditArgs(args);
+    else if (lower === "write") sanitizeWriteArgs(args);
+    else if (lower === "bash") sanitizeBashArgs(args);
     return JSON.stringify(args);
   } catch {
     return argsJson;
   }
 }
 
-function sanitizeReadArgs(args) {
+export function sanitizeEditArgs(args) {
+  if (!args || typeof args !== "object") return;
+  const path = args.file_path ?? args.filePath ?? args.path ?? args.file;
+  if (path !== undefined) {
+    args.file_path = path;
+    delete args.filePath;
+    delete args.path;
+    delete args.file;
+  }
+  const oldStr = args.old_string ?? args.oldString ?? args.old_str ?? args.oldText ?? args.old_text;
+  if (oldStr !== undefined) {
+    args.old_string = oldStr;
+    delete args.oldString;
+    delete args.old_str;
+    delete args.oldText;
+    delete args.old_text;
+  }
+  const newStr = args.new_string ?? args.newString ?? args.new_str ?? args.newText ?? args.new_text;
+  if (newStr !== undefined) {
+    args.new_string = newStr;
+    delete args.newString;
+    delete args.new_str;
+    delete args.newText;
+    delete args.new_text;
+  }
+  const replaceAll = args.replace_all ?? args.replaceAll;
+  if (replaceAll !== undefined) {
+    args.replace_all = Boolean(replaceAll);
+    delete args.replaceAll;
+  }
+}
+
+export function sanitizeWriteArgs(args) {
+  if (!args || typeof args !== "object") return;
+  const path = args.file_path ?? args.filePath ?? args.path ?? args.file;
+  if (path !== undefined) {
+    args.file_path = path;
+    delete args.filePath;
+    delete args.path;
+    delete args.file;
+  }
+}
+
+export function sanitizeBashArgs(args) {
+  if (!args || typeof args !== "object") return;
+  const cmd = args.command ?? args.cmd;
+  if (cmd !== undefined) {
+    args.command = cmd;
+    delete args.cmd;
+  }
+}
+
+export function sanitizeReadArgs(args) {
+  if (!args || typeof args !== "object") return;
+  const path = args.file_path ?? args.filePath ?? args.path ?? args.file;
+  if (path !== undefined) {
+    args.file_path = path;
+    delete args.filePath;
+    delete args.path;
+    delete args.file;
+  }
   if (typeof args.limit === "string" && /^\d+$/.test(args.limit)) args.limit = Number(args.limit);
   if (typeof args.offset === "string" && /^-?\d+$/.test(args.offset)) args.offset = Number(args.offset);
 
@@ -196,6 +260,15 @@ export function openaiToClaudeResponse(chunk, state) {
         let toolName = tc.function?.name || "";
         if (toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
           toolName = toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length);
+        }
+        if (state.toolNameMap?.has(toolName)) {
+          toolName = state.toolNameMap.get(toolName);
+        } else {
+          const lower = toolName.toLowerCase();
+          if (lower === "edit") toolName = "Edit";
+          else if (lower === "read") toolName = "Read";
+          else if (lower === "write") toolName = "Write";
+          else if (lower === "bash") toolName = "Bash";
         }
 
         results.push({
