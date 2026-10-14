@@ -15,7 +15,7 @@ import {
   coerceResponsesOutput,
 } from "../translator/formats/responsesApi.js";
 
-const OPENCODE_UA = "opencode/1.18.35";
+const OPENCODE_UA = "opencode/1.18.35 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14";
 const MAX_SESSION_LENGTH = 256;
 const MAX_TOOL_NAME_LEN = 128;
 const SESSION_HEADER = "x-opencode-session";
@@ -26,7 +26,9 @@ export const OPENCODE_REQUEST_RE = /^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 const BASE62_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
 function hasValidOpencodeVersion(ua) {
-  const m = String(ua || "").match(/opencode\/(\d+)\.(\d+)(?:\.(\d+))?/i);
+  const s = String(ua || "");
+  if (!s.includes("runtime/bun")) return false;
+  const m = s.match(/opencode\/(\d+)\.(\d+)(?:\.(\d+))?/i);
   if (!m) return false;
   const major = parseInt(m[1], 10);
   const minor = parseInt(m[2], 10);
@@ -476,9 +478,9 @@ export class OpenCodeExecutor extends BaseExecutor {
 
   buildUrl(model) {
     const base = this.config.baseUrl;
-    if (isResponsesModel(model)) return `${base}/zen/v1/responses`;
-    if (isMessagesModel(model)) return `${base}/zen/v1/messages`;
-    return `${base}/zen/v1/chat/completions`;
+    if (isResponsesModel(model)) return `${base}/inference/v1/responses`;
+    if (isMessagesModel(model)) return `${base}/inference/v1/messages`;
+    return `${base}/inference/v1/chat/completions`;
   }
 
   buildHeaders(credentials, stream = true, url = "") {
@@ -493,9 +495,11 @@ export class OpenCodeExecutor extends BaseExecutor {
     const downstreamReq = normalizeRequestId(lower["x-opencode-request"]);
     const requestId = credentials?.[REQ_FIELD] || downstreamReq || generateRequestId();
 
+    const token = credentials?.apiKey || credentials?.accessToken || process.env.OPENCODE_API_KEY || "public";
+
     const headers = {
       "Content-Type": "application/json",
-      "Authorization": "Bearer public",
+      "Authorization": `Bearer ${token}`,
       "User-Agent": isOpencodeDownstream ? downstreamUa : OPENCODE_UA,
       "x-opencode-client": lower["x-opencode-client"] || "cli",
       "x-opencode-session": session,

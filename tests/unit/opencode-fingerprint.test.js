@@ -21,7 +21,7 @@ describe("opencodeFingerprint — request side", () => {
 
     expect(names).toContain("bash");
     expect(names).not.toContain("Bash");
-    expect(names).toContain("Edit");
+    expect(names).toContain("Glob");
     expect(map.get("bash")).toBe("Bash");
   });
 
@@ -59,18 +59,18 @@ describe("opencodeFingerprint — request side", () => {
     expect(body.tool_choice).toBe("auto");
   });
 
-  it("preserves the chat no-tool default tool_choice=none", () => {
+  it("defaults chat no-tool tool_choice to auto to avoid 403 FreeTierError", () => {
     const body = {};
     applyFingerprintTools(body, false);
 
     expect(body.tools.map((tool) => tool.function.name)).toEqual(OPENCODE_FINGERPRINT_TOOLS);
-    expect(body.tool_choice).toBe("none");
+    expect(body.tool_choice).toBe("auto");
   });
 
   it("does not invent a chat tool_choice when the caller already supplied tools", () => {
-    const body = { tools: chat(["Edit"]) };
+    const body = { tools: chat(["terminal"]) };
     applyFingerprintTools(body, false);
-    expect(body.tool_choice).toBeUndefined();
+    expect(body.tool_choice).toBe("auto");
   });
 
   it("appends only genuinely missing quartet members", () => {
@@ -78,8 +78,8 @@ describe("opencodeFingerprint — request side", () => {
     applyFingerprintTools(body, true);
 
     const names = body.tools.map((tool) => tool.name);
-    expect(names).toContain("glob");
-    expect(names).toContain("grep");
+    expect(names).toContain("edit");
+    expect(names).toContain("write");
     expect(names).toContain("terminal");
     expect(body.tools).toHaveLength(5);
   });
@@ -182,9 +182,10 @@ describe("fingerprintToolKey", () => {
   it("maps quartet case/whitespace variants and rejects other tools", () => {
     expect(fingerprintToolKey("Bash")).toBe("bash");
     expect(fingerprintToolKey(" bash ")).toBe("bash");
-    expect(fingerprintToolKey("GLOB")).toBe("glob");
     expect(fingerprintToolKey("Read")).toBe("read");
-    expect(fingerprintToolKey("Edit")).toBe("");
+    expect(fingerprintToolKey("Edit")).toBe("edit");
+    expect(fingerprintToolKey("Write")).toBe("write");
+    expect(fingerprintToolKey("GLOB")).toBe("");
     expect(fingerprintToolKey("terminal")).toBe("");
     expect(fingerprintToolKey(null)).toBe("");
   });
